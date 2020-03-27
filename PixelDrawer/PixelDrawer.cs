@@ -1,5 +1,4 @@
 ﻿using PEPlugin.SDX;
-using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -92,7 +91,7 @@ namespace PixelDrawer
             for (int i = 0; i < pixels.Length; i++)
             {
                 var p = i * 4;
-                pixels[i].FromARGB(array[p + 3], array[p + 2], array[p + 1], array[p]);
+                pixels[i] = new Pixel(array[p + 2], array[p + 1], array[p + 0], array[p + 3]);
             }
             return pixels;
         }
@@ -115,8 +114,8 @@ namespace PixelDrawer
 
         public Pixel this[int x, int y]
         {
-            get => pixels[x * 4 + y * Width];
-            set => pixels[x * 4 + y * Width] = value;
+            get => pixels[x + y * Width];
+            set => pixels[x + y * Width] = value;
         }
 
         public PixelMap(Pixel[] pixels, int width)
@@ -127,8 +126,8 @@ namespace PixelDrawer
 
         public byte[] ToBytes()
         {
-            byte[] vs = new byte[Length * 4];
-            for (int i = 0; i < Length; i++)
+            byte[] vs = new byte[Length];
+            for (int i = 0; i < Count; i++)
             {
                 int p = i * 4;
                 vs[p + 0] = pixels[i].B;
@@ -150,16 +149,18 @@ namespace PixelDrawer
 
         Bitmap canvas;
         BitmapData map;
-        IntPtr ptr => map.Scan0;
         PixelMap pixels;
         bool IsLocking;
 
-        Graphics graphics;
-
-        /// <summary>
-        /// 複製を返す
-        /// </summary>
-        public Bitmap GetCopy() => new Bitmap(canvas);
+        public Bitmap Canvas
+        {
+            get
+            {
+                if (IsLocking)
+                    UnLock();
+                return canvas;
+            }
+        }
 
         /// <summary>
         /// ボトムアップ形式の真偽値
@@ -189,18 +190,14 @@ namespace PixelDrawer
             Width = width;
             Height = height;
             canvas = new Bitmap(Width + 1, Height + 1);
-            Map();
-            IsBottomUp = map.Stride < 0;
-
-            graphics = Graphics.FromImage(canvas);
         }
 
         Color AverageColor(Color[] colors)
         {
-            byte r = 0;
-            byte g = 0;
-            byte b = 0;
-            byte a = 0;
+            int r = 0;
+            int g = 0;
+            int b = 0;
+            int a = 0;
             foreach (var c in colors)
             {
                 r += c.R;
@@ -211,7 +208,10 @@ namespace PixelDrawer
             return Color.FromArgb(a / colors.Length, r / colors.Length, g / colors.Length, b / colors.Length);
         }
 
-        void Map()
+        /// <summary>
+        /// canvasをメモリロックする
+        /// </summary>
+        public void Lock()
         {
             if (IsLocking)
                 return;
@@ -219,14 +219,14 @@ namespace PixelDrawer
             IsLocking = true;
             IsBottomUp = map.Stride < 0;
             var pxls = new byte[Length];
-            System.Runtime.InteropServices.Marshal.Copy(ptr, pxls, 0, Length);
+            System.Runtime.InteropServices.Marshal.Copy(map.Scan0, pxls, 0, Length);
             pixels = new PixelMap(Pixel.ArrayFrom(pxls), canvas.Width);
         }
 
         /// <summary>
         /// canvasのメモリロックを解除する
         /// </summary>
-        public void Unmap()
+        public void UnLock()
         {
             if (!IsLocking)
                 return;
@@ -240,9 +240,9 @@ namespace PixelDrawer
         public void Write()
         {
             if (!IsLocking)
-                Map();
-
-            System.Runtime.InteropServices.Marshal.Copy(pixels.ToBytes(), 0, ptr, pixels.Length);
+                return;
+            System.Runtime.InteropServices.Marshal.Copy(pixels.ToBytes(), 0, map.Scan0, pixels.Length);
+            UnLock();
         }
 
         int ToWidth(float value) => (value * Width).Round();
@@ -256,6 +256,7 @@ namespace PixelDrawer
         /// <param name="pos">位置（割合）</param>
         public void Plot(Color color, V2 pos)
         {
+            Lock();
             pixels[ToWidth(pos.U), ToHeight(pos.V)].FromColor(color);
         }
 
@@ -279,8 +280,12 @@ namespace PixelDrawer
         /// </summary>
         public void fillImage(Bitmap bitmap, InterpolationMode mode = InterpolationMode.HighQualityBicubic)
         {
-            graphics.InterpolationMode = mode;
-            graphics.DrawImage(bitmap, 0, 0, Width, Height);
+            UnLock();
+            using (Graphics graphics = Graphics.FromImage(canvas))
+            {
+                graphics.InterpolationMode = mode;
+                graphics.DrawImage(bitmap, 0, 0, Width, Height);
+            }
         }
 
 
@@ -288,8 +293,9 @@ namespace PixelDrawer
         /// 多角形を描画する
         /// Write不要
         /// </summary>
-        public void DrawPolygon(Color[] colors, V2[] points, int width)
+        public void DrawPolygon(Color[] colors, V2[] points, float width)
         {
+            UnLock();
             var ps = points.Select(p => new Point(ToWidth(p.U), ToHeight(p.V))).ToArray();
             using (GraphicsPath gp = new GraphicsPath())
             {
@@ -297,6 +303,7 @@ namespace PixelDrawer
                 using (PathGradientBrush brush = new PathGradientBrush(gp))
                 {
                     brush.SurroundColors = colors;
+                    using (Graphics graphics = Graphics.FromImage(canvas))
                     using (Pen pen = new Pen(brush))
                     {
                         pen.Width = width;
@@ -312,10 +319,12 @@ namespace PixelDrawer
         /// </summary>
         public void FillPolygon(Color[] colors, V2[] points)
         {
+            UnLock();
             var ps = points.Select(p => new Point(ToWidth(p.U), ToHeight(p.V))).ToArray();
             using (GraphicsPath gp = new GraphicsPath())
             {
                 gp.AddPolygon(ps);
+                using (Graphics graphics = Graphics.FromImage(canvas))
                 using (PathGradientBrush brush = new PathGradientBrush(gp))
                 {
                     brush.SurroundColors = colors;
@@ -328,9 +337,8 @@ namespace PixelDrawer
         ~PixelDrawer()
         {
             if (IsLocking)
-                Unmap();
+                UnLock();
             canvas.Dispose();
-            graphics.Dispose();
         }
     }
 }
