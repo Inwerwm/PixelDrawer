@@ -248,16 +248,40 @@ namespace PixelDrawer
         int ToWidth(float value) => (value * Width).Round();
         int ToHeight(float value) => (value * Height).Round();
 
+        public void PlotSquare(Color color, int x, int y, int width, int height)
+        {
+            PlotSquare(color, new Rectangle(x, y, width, height));
+        }
+
+        public void PlotSquare(Color color, Rectangle rectangle)
+        {
+            for (int i = rectangle.X; i < rectangle.Width; i++)
+            {
+                for (int j = rectangle.Y; j < rectangle.Height; j++)
+                {
+                    pixels[i, j].FromColor(color);
+                }
+            }
+        }
+
         /// <summary>
         /// 指定色の点を打つ
         /// Write要
         /// </summary>
         /// <param name="color">色</param>
         /// <param name="pos">位置（割合）</param>
-        public void Plot(Color color, V2 pos)
+        public void Plot(Color color, V2 pos, int size = 1)
         {
             Lock();
-            pixels[ToWidth(pos.U), ToHeight(pos.V)].FromColor(color);
+
+            if (size > 1)
+            {
+                PlotSquare(color, ToWidth(pos.U) - size + 1, ToHeight(pos.V) - size + 1, 2 * size - 1, 2 * size - 1);
+            }
+            else
+            {
+                pixels[ToWidth(pos.U), ToHeight(pos.V)].FromColor(color);
+            }
         }
 
         /// <summary>
@@ -266,11 +290,11 @@ namespace PixelDrawer
         /// </summary>
         /// <param name="colors">色</param>
         /// <param name="pos">位置（割合）</param>
-        public void Plot(Color[] colors, V2[] pos)
+        public void Plot(Color[] colors, V2[] pos, int size = 1)
         {
             for (int i = 0; i < pos.Length; i++)
             {
-                Plot(colors[i], pos[i]);
+                Plot(colors[i], pos[i], size);
             }
         }
 
