@@ -255,6 +255,8 @@ namespace PixelDrawer
 
         public void PlotSquare(Color color, Rectangle rectangle)
         {
+            Lock();
+
             for (int i = rectangle.X; i < rectangle.Width; i++)
             {
                 for (int j = rectangle.Y; j < rectangle.Height; j++)
