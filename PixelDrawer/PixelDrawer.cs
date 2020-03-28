@@ -110,7 +110,7 @@ namespace PixelDrawer
         /// </summary>
         public int Count => pixels.Length;
         public int Width { get; private set; }
-        public int Height => Length / Width;
+        public int Height => Count / Width;
 
         public Pixel this[int x, int y]
         {
@@ -257,11 +257,12 @@ namespace PixelDrawer
         {
             Lock();
 
-            for (int i = rectangle.X; i < rectangle.Width; i++)
+            for (int i = rectangle.Left; i < rectangle.Right; i++)
             {
-                for (int j = rectangle.Y; j < rectangle.Height; j++)
+                for (int j = rectangle.Top; j < rectangle.Bottom; j++)
                 {
-                    pixels[i, j].FromColor(color);
+                    if (i.IsInside(-1, pixels.Width) && j.IsInside(-1, pixels.Height))
+                        pixels[i, j].FromColor(color);
                 }
             }
         }
@@ -276,13 +277,17 @@ namespace PixelDrawer
         {
             Lock();
 
+            int u = ToWidth(pos.U);
+            int v = ToHeight(pos.V);
             if (size > 1)
             {
-                PlotSquare(color, ToWidth(pos.U) - size + 1, ToHeight(pos.V) - size + 1, 2 * size - 1, 2 * size - 1);
+                PlotSquare(color, u - size + 1, v - size + 1, 2 * size - 1, 2 * size - 1);
             }
             else
             {
-                pixels[ToWidth(pos.U), ToHeight(pos.V)].FromColor(color);
+                if (u.IsInside(-1, pixels.Width) && v.IsInside(-1, pixels.Height))
+                    return;
+                pixels[u, v].FromColor(color);
             }
         }
 
